@@ -1,14 +1,23 @@
-const express=require('express');
-const router=express.Router();
-const IndexController=require('../controllers/indexController');
+const express = require('express');
+const router = express.Router();
+const IndexController = require('../controllers/indexController');
 
-router.get('/',IndexController.homeController);
+// Home route
+router.get('/', IndexController.homeController);
 
+// Create Interview
+router.post('/create-list', IndexController.createList);
 
-router.post('/create-list',IndexController.createList);//Create Interview
-router.get('/delete',IndexController.DeleteList);//Delete INterview
-router.post('/add',IndexController.addParticipant);// API for creating participants
-router.get('/info',IndexController.getInfo);
-router.post('/edit-list',IndexController.edit);
+// Delete Interview
+router.delete('/delete/:id', IndexController.DeleteList); // Use DELETE method and include interview ID in the route
 
-module.exports=router;
+// Create Participant
+router.post('/add-participant', IndexController.addParticipant); // Renamed to clarify it's for participants
+
+// Get Info
+router.get('/info/:id', IndexController.getInfo); // Pass ID as a route parameter for clarity and RESTful design
+
+// Edit Interview
+router.put('/edit-list/:id', IndexController.edit); // Use PUT method for editing and include ID in the route
+
+module.exports = router;

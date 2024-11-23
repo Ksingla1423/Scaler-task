@@ -1,185 +1,207 @@
 const Item = require('../models/listitem');
 const Participant = require('../models/participant');
 const moment = require('moment');
-// const mailer = require('../mailer/schedule');
 
+// Home Controller
 module.exports.homeController = async function (req, res) {
   try {
     let toDoList = await Item.find({}).populate('participants');
-    var offset = -5.5 * 3600000;
-    var ans = [];
-    toDoList.forEach(function (item) {
-      var temp = {}
-      var startTime = moment(item.startTime).utc().format();
-      var endTime = moment(item.endTime).utc().format();
-      delete temp.__v;
-      temp.startTime = startTime
-      temp.endTime = endTime
-      temp._id = item._id
-      temp.description = item.description
-      ans.push(temp);
-    })
     let participants = await Participant.find({});
+    let ans = [];
+    toDoList.forEach(function (item) {
+      let temp = {};
+      temp.startTime = moment(item.startTime).utc().format();
+      temp.endTime = moment(item.endTime).utc().format();
+      temp._id = item._id;
+      temp.description = item.description;
+      ans.push(temp);
+    });
     return res.render('home', {
       list: ans,
-      participants: participants
+      participants: participants,
     });
   } catch (err) {
-    if (err) { console.log('error in printing list', err); return; }
+    console.error('Error in fetching list:', err);
+    return res.status(500).send('Internal Server Error');
   }
-}
+};
 
+// Get Info
 module.exports.getInfo = async (req, res) => {
   try {
     let info = await Item.findById(req.query.id).populate('participants');
-    return res.status(200).json({
-      data: info
-    })
+    return res.status(200).json({ data: info });
   } catch (err) {
-    if (err) { console.log(err); return; }
+    console.error('Error fetching info:', err);
+    return res.status(500).send('Internal Server Error');
   }
-}
+};
 
+// Render Create List Page
+module.exports.renderCreateList = async function (req, res) {
+  try {
+    let participants = await Participant.find({});
+    return res.render('create_list', { participants });
+  } catch (err) {
+    console.error('Error rendering Create List page:', err);
+    return res.status(500).send('Internal Server Error');
+  }
+};
+
+// Create List
 module.exports.createList = async function (req, res) {
-  var startDate = req.body.date + "T" + req.body.start_time + "+05:30"
-  startDate = new Date(startDate);
-  var endDate = req.body.date + "T" + req.body.end_time + "+05:30"
-  endDate = new Date(endDate);
+  let startDate = new Date(`${req.body.date}T${req.body.start_time}+05:30`);
+  let endDate = new Date(`${req.body.date}T${req.body.end_time}+05:30`);
+
   if (endDate.getTime() < startDate.getTime()) {
-    req.flash('error', 'End time can not be before start time');
-    res.redirect('back');
-  }
-  else if (typeof (req.body.pid) != 'object') {
-    req.flash('error', 'Number of Participants less than 2')
+    req.flash('error', 'End time cannot be before start time');
     return res.redirect('back');
-  } else {
-    try {
-      let item = await Item.findOne({
-        $and: [{ participants: { $in: req.body.pid } }, {
-          $or: [{
-            $and: [{ startTime: { $lte: startDate } }, { $and: [{ endTime: { $gte: startDate } }, { endTime: { $lte: endDate } }] }]
-          },
-          {
-            $and: [{ $and: [{ startTime: { $gte: startDate } }, { startTime: { $lte: endDate } }] }, { endTime: { $gte: endDate } }]
-          },
-          {
-            $and: [{ startTime: { $gte: startDate } }, { endTime: { $lte: endDate } }]
-          }]
-        }]
-      }
-      );
-      if (item) {
-        req.flash('error', 'Time clash with one of the participants')
-        return res.redirect('back');
-      } else {
-        Item.create({
-          description: req.body.description,
-          category: req.body.category,
-          startTime: startDate,
-          endTime: endDate,
-          participants: req.body.pid
-        }, async function (err, newItem) {
-          if (err) {
-            console.log('error in creating', err);
-            return;
-          }
-          let interview = await Item.findById(newItem._id).populate('participants');
-          for (let i = 0; i < interview.participants.length; i++) {
-            let temp = {
-              name: interview.participants[i].name,
-              email: interview.participants[i].email,
-              start: interview.startTime,
-              end: interview.endTime
-            }
-          //  mailer.newInterview(temp)
-          }
-          req.flash('success', 'Interview Scheduled Successfully')
-          return res.redirect('back');
-        }
-        )
-      }
-    } catch (err) {
-      if (err) {
-        console.log('error in creating', err);
-        return res.redirect('back');
-      }
-    }
   }
-}
 
+  if (!Array.isArray(req.body.pid) || req.body.pid.length < 2) {
+    req.flash('error', 'Number of participants must be at least 2');
+    return res.redirect('back');
+  }
+
+  try {
+    let conflict = await Item.findOne({
+      $and: [
+        { participants: { $in: req.body.pid } },
+        {
+          $or: [
+            {
+              $and: [
+                { startTime: { $lte: startDate } },
+                { endTime: { $gte: startDate } },
+              ],
+            },
+            {
+              $and: [
+                { startTime: { $lte: endDate } },
+                { endTime: { $gte: endDate } },
+              ],
+            },
+            {
+              $and: [
+                { startTime: { $gte: startDate } },
+                { endTime: { $lte: endDate } },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (conflict) {
+      req.flash('error', 'Time clash with one of the participants');
+      return res.redirect('back');
+    }
+
+    await Item.create({
+      description: req.body.description,
+      category: req.body.category,
+      startTime: startDate,
+      endTime: endDate,
+      participants: req.body.pid,
+    });
+
+    req.flash('success', 'Interview Scheduled Successfully');
+    return res.redirect('/');
+  } catch (err) {
+    console.error('Error creating list:', err);
+    return res.redirect('back');
+  }
+};
+
+// Delete List
 module.exports.DeleteList = async function (req, res) {
-  await Item.findByIdAndDelete(req.query.id)
-  req.flash('success', 'Task Delete Successfuly')
-  return res.redirect('/');
-}
+  try {
+    await Item.findByIdAndDelete(req.query.id);
+    req.flash('success', 'Task Deleted Successfully');
+    return res.redirect('/');
+  } catch (err) {
+    console.error('Error deleting list:', err);
+    return res.status(500).send('Internal Server Error');
+  }
+};
 
+// Add Participant
 module.exports.addParticipant = async (req, res) => {
   try {
     await Participant.create({
       name: req.body.name,
       phone: req.body.phone,
-      email: req.body.email
-    })
-    return res.status(200).json({
-      message: 'Participant Created'
-    })
+      email: req.body.email,
+    });
+    return res.status(200).json({ message: 'Participant Created' });
   } catch (err) {
-    if (err) {
-      console.log('error in creating', err);
-      return res.status(500).json({
-        message: 'Internal server error'
-      });
-    }
+    console.error('Error creating participant:', err);
+    return res.status(500).json({ message: 'Internal Server Error' });
   }
-}
+};
 
+// Edit List
 module.exports.edit = async (req, res) => {
-  var startDate = req.body.date + "T" + req.body.start_time + "+05:30"
-  startDate = new Date(startDate);
-  var endDate = req.body.date + "T" + req.body.end_time + "+05:30"
-  endDate = new Date(endDate);
+  let startDate = new Date(`${req.body.date}T${req.body.start_time}+05:30`);
+  let endDate = new Date(`${req.body.date}T${req.body.end_time}+05:30`);
+
   if (endDate.getTime() < startDate.getTime()) {
-    req.flash('error', 'End time can not be before start time');
-    res.redirect('back');
-  }
-  else if (typeof (req.body.pid) != 'object') {
-    req.flash('error', 'Number of Participants less than 2')
+    req.flash('error', 'End time cannot be before start time');
     return res.redirect('back');
-  } else {
-    try {
-      let item = await Item.findOne({
-        $and: [{ participants: { $in: req.body.pid } }, { _id: { $ne: req.query.id } }, {
-          $or: [{
-            $and: [{ startTime: { $lte: startDate } }, { $and: [{ endTime: { $gte: startDate } }, { endTime: { $lte: endDate } }] }]
-          },
-          {
-            $and: [{ $and: [{ startTime: { $gte: startDate } }, { startTime: { $lte: endDate } }] }, { endTime: { $gte: endDate } }]
-          },
-          {
-            $and: [{ startTime: { $gte: startDate } }, { endTime: { $lte: endDate } }]
-          }]
-        }]
-      }
-      );
-      if (item) {
-        req.flash('error', 'Time clash with one of the participants')
-        return res.redirect('back');
-      } else {
-        await Item.findByIdAndUpdate(req.query.id, {
-          description: req.body.description,
-          category: req.body.category,
-          startTime: startDate,
-          endTime: endDate,
-          participants: req.body.pid
-        });
-        req.flash('success', 'Record Updated')
-        return res.redirect('back')
-      }
-    } catch (err) {
-      if (err) {
-        console.log('error in creating', err);
-        return res.redirect('back');
-      }
-    }
   }
-}
+
+  if (!Array.isArray(req.body.pid) || req.body.pid.length < 2) {
+    req.flash('error', 'Number of participants must be at least 2');
+    return res.redirect('back');
+  }
+
+  try {
+    let conflict = await Item.findOne({
+      $and: [
+        { participants: { $in: req.body.pid } },
+        { _id: { $ne: req.query.id } },
+        {
+          $or: [
+            {
+              $and: [
+                { startTime: { $lte: startDate } },
+                { endTime: { $gte: startDate } },
+              ],
+            },
+            {
+              $and: [
+                { startTime: { $lte: endDate } },
+                { endTime: { $gte: endDate } },
+              ],
+            },
+            {
+              $and: [
+                { startTime: { $gte: startDate } },
+                { endTime: { $lte: endDate } },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (conflict) {
+      req.flash('error', 'Time clash with one of the participants');
+      return res.redirect('back');
+    }
+
+    await Item.findByIdAndUpdate(req.query.id, {
+      description: req.body.description,
+      category: req.body.category,
+      startTime: startDate,
+      endTime: endDate,
+      participants: req.body.pid,
+    });
+
+    req.flash('success', 'Record Updated');
+    return res.redirect('back');
+  } catch (err) {
+    console.error('Error updating list:', err);
+    return res.redirect('back');
+  }
+};
