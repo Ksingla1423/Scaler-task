@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Interview Creation Portal
 
 ## Set up:
@@ -22,4 +22,3 @@
 # Interview-Portal
 
 
->>>>>>> 4bb3d111ccb397d0f44ae252a0ba951d9bd3d6c5
