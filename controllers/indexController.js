@@ -150,7 +150,7 @@ module.exports.edit = async (req, res) => {
     return res.redirect('back');
   }
 
-  if (!Array.isArray(req.body.pid) || req.body.pid.length < 2) {
+  if (!Array.isArray(req.body.pid) || req.body.pid.length < 1) {
     req.flash('error', 'Number of participants must be at least 2');
     return res.redirect('back');
   }
